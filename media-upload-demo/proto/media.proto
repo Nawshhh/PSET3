@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package media;
+
+service MediaUploadService {
+  // Producer uploads a whole video file in one request
+  rpc UploadVideo (UploadRequest) returns (UploadResponse);
+}
+
+message UploadRequest {
+  string producerId = 1;
+  string filename   = 2;
+  bytes  data       = 3;
+}
+
+message UploadResponse {
+  string status  = 1; // "OK" or "DROPPED"
+  string message = 2;
+}
