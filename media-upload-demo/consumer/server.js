@@ -5,14 +5,14 @@ const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
 const express = require("express");
 const cors = require("cors");
+const crypto = require("crypto");
+const { spawn } = require("child_process");
 
-// ---- config from env / CLI ----
+// ---- config ----
 const GRPC_PORT = process.env.GRPC_PORT || "50051";
 const HTTP_PORT = parseInt(process.env.HTTP_PORT || "4000", 10);
 
-// q - max queue length (leaky bucket)
 const MAX_QUEUE = parseInt(process.env.Q || "5", 10);
-// c - number of consumer "threads" (we just treat it as max concurrent saves)
 const MAX_CONCURRENT_SAVES = parseInt(process.env.C || "2", 10);
 
 const UPLOAD_DIR = path.join(__dirname, "uploads");
@@ -20,27 +20,74 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-// In-memory queue + concurrency limiter
+// ---- in-memory state ----
 let queueLength = 0;
 let activeSaves = 0;
 
+// duplicate detection: map hash -> filename
+const seenHashes = new Map();
+
+// load proto
 const packageDef = protoLoader.loadSync(
   path.join(__dirname, "..", "proto", "media.proto"),
   { keepCase: true, longs: String, enums: String, defaults: true, oneofs: true }
 );
 const mediaProto = grpc.loadPackageDefinition(packageDef).media;
 
-// Handle UploadVideo RPC
+/**
+ * Optional: compress a video using ffmpeg (must be installed on the machine).
+ * Produces "<name>_compressed.ext" alongside the original.
+ */
+function compressVideo(inputPath) {
+  const extMatch = inputPath.match(/\.[^\.]+$/);
+  const ext = extMatch ? extMatch[0] : ".mp4";
+  const outputPath = inputPath.replace(ext, `_compressed${ext}`);
+
+  console.log("[CONSUMER] Starting compression:", inputPath, "->", outputPath);
+
+  const ff = spawn("ffmpeg", [
+    "-y",
+    "-i",
+    inputPath,
+    "-b:v",
+    "1200k", // simple target bitrate
+    outputPath,
+  ]);
+
+  ff.on("close", (code) => {
+    if (code === 0) {
+      console.log("[CONSUMER] Compression finished:", outputPath);
+    } else {
+      console.warn("[CONSUMER] Compression failed with code", code);
+    }
+  });
+}
+
+// gRPC handler
 function uploadVideo(call, callback) {
   const { producerId, filename, data } = call.request;
 
-  if (queueLength >= MAX_QUEUE) {
+  // ---- BONUS 2: duplicate detection ----
+  const hash = crypto.createHash("sha256").update(data).digest("hex");
+  if (seenHashes.has(hash)) {
+    const original = seenHashes.get(hash);
     console.log(
-      `[CONSUMER] Dropping video from ${producerId} – queue is full (${queueLength}/${MAX_QUEUE})`
+      `[CONSUMER] Duplicate detected from ${producerId}: ${filename} (same as ${original})`
     );
     return callback(null, {
-      status: "DROPPED",
-      message: "Queue full – video dropped by leaky bucket policy",
+      status: "DUPLICATE",
+      message: `Duplicate upload – already have ${original}`,
+    });
+  }
+
+  // ---- BONUS 1: queue-full notification ----
+  if (queueLength >= MAX_QUEUE) {
+    console.log(
+      `[CONSUMER] Rejecting video from ${producerId} – queue FULL (${queueLength}/${MAX_QUEUE})`
+    );
+    return callback(null, {
+      status: "QUEUE_FULL",
+      message: "Queue is full – please retry later",
     });
   }
 
@@ -51,6 +98,7 @@ function uploadVideo(call, callback) {
 
   const save = () => {
     activeSaves++;
+
     const safeName = `${Date.now()}-${producerId}-${filename}`;
     const filePath = path.join(UPLOAD_DIR, safeName);
 
@@ -70,26 +118,32 @@ function uploadVideo(call, callback) {
         `[CONSUMER] Saved ${safeName}. queueLength=${queueLength}, activeSaves=${activeSaves}`
       );
 
+      // remember hash AFTER successful write
+      seenHashes.set(hash, safeName);
+
+      // ---- BONUS 3: fire-and-forget compression ----
+      compressVideo(filePath);
+
       callback(null, {
         status: "OK",
         message: "Video saved: " + safeName,
       });
-
-      // Try to drain queue if more uploads are waiting in gRPC handlers
     });
   };
 
   if (activeSaves < MAX_CONCURRENT_SAVES) {
     save();
   } else {
-    // Simple "delay" to simulate queued processing
+    // tiny delay to simulate waiting in queue
     setTimeout(save, 10);
   }
 }
 
 function startGrpcServer() {
   const server = new grpc.Server();
-  server.addService(mediaProto.MediaUploadService.service, { UploadVideo: uploadVideo });
+  server.addService(mediaProto.MediaUploadService.service, {
+    UploadVideo: uploadVideo,
+  });
   server.bindAsync(
     `0.0.0.0:${GRPC_PORT}`,
     grpc.ServerCredentials.createInsecure(),
@@ -108,14 +162,13 @@ function startHttpServer() {
   const app = express();
   app.use(cors());
 
-  // List uploaded videos
+  // list uploaded videos (original + compressed if you want)
   app.get("/api/videos", (req, res) => {
     fs.readdir(UPLOAD_DIR, (err, files) => {
       if (err) {
         console.error(err);
         return res.status(500).json({ error: "Failed to list videos" });
       }
-      // Only return video-like files
       const videos = files.filter((f) =>
         f.match(/\.(mp4|webm|ogg|mov|m4v)$/i)
       );
@@ -123,11 +176,12 @@ function startHttpServer() {
     });
   });
 
-  // Serve the actual video files
   app.use("/videos", express.static(UPLOAD_DIR));
 
   app.listen(HTTP_PORT, () => {
-    console.log(`[CONSUMER] HTTP API listening on http://localhost:${HTTP_PORT}`);
+    console.log(
+      `[CONSUMER] HTTP API listening on http://localhost:${HTTP_PORT}`
+    );
   });
 }
 
