@@ -8,7 +8,6 @@ const cors = require("cors");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
 
-// ---- config ----
 const GRPC_PORT = process.env.GRPC_PORT || "50051";
 const HTTP_PORT = parseInt(process.env.HTTP_PORT || "4000", 10);
 
@@ -20,7 +19,6 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-// ---- in-memory state ----
 let queueLength = 0;
 let activeSaves = 0;
 
@@ -35,7 +33,7 @@ const packageDef = protoLoader.loadSync(
 const mediaProto = grpc.loadPackageDefinition(packageDef).media;
 
 /**
- * Optional: compress a video using ffmpeg (must be installed on the machine).
+ * compress a video using ffmpeg.
  * Produces "<name>_compressed.ext" alongside the original.
  */
 function compressVideo(inputPath) {
@@ -67,7 +65,7 @@ function compressVideo(inputPath) {
 function uploadVideo(call, callback) {
   const { producerId, filename, data } = call.request;
 
-  // ---- BONUS 2: duplicate detection ----
+  // BONUS: duplicate detection 
   const hash = crypto.createHash("sha256").update(data).digest("hex");
   if (seenHashes.has(hash)) {
     const original = seenHashes.get(hash);
@@ -80,7 +78,7 @@ function uploadVideo(call, callback) {
     });
   }
 
-  // ---- BONUS 1: queue-full notification ----
+  // BONUS: queue-full notification 
   if (queueLength >= MAX_QUEUE) {
     console.log(
       `[CONSUMER] Rejecting video from ${producerId} – queue FULL (${queueLength}/${MAX_QUEUE})`
@@ -121,7 +119,7 @@ function uploadVideo(call, callback) {
       // remember hash AFTER successful write
       seenHashes.set(hash, safeName);
 
-      // ---- BONUS 3: fire-and-forget compression ----
+      // BONUS: compression 
       compressVideo(filePath);
 
       callback(null, {
@@ -162,7 +160,7 @@ function startHttpServer() {
   const app = express();
   app.use(cors());
 
-  // list uploaded videos (original + compressed if you want)
+  // list uploaded videos (original + compressed)
   app.get("/api/videos", (req, res) => {
     fs.readdir(UPLOAD_DIR, (err, files) => {
       if (err) {
