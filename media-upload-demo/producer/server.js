@@ -176,47 +176,30 @@ app.post("/upload", (req, res) => {
       console.log(`[PRODUCER ${PRODUCER_ID}] Saved local file: ${localPath}`);
 
       // forward via gRPC
-        client.UploadVideo(
-        { producerId: PRODUCER_ID, filename, data: buffer },
-        (grpcErr, response) => {
-            if (grpcErr) {
-            console.error(
-                `[PRODUCER ${PRODUCER_ID}] gRPC error:`,
-                grpcErr.message
-            );
-            return res
-                .status(500)
-                .json({ error: "Failed to upload to consumer (gRPC error)" });
-            }
-
-            console.log(
-            `[PRODUCER ${PRODUCER_ID}] gRPC response for ${filename}:`,
-            response
-            );
-
-            if (!response || !response.status) {
-            return res
-                .status(500)
-                .json({ error: "Invalid response from consumer" });
-            }
-
-            if (response.status === "QUEUE_FULL") {
-            // tell the browser clearly this is a queue-full case
-            return res.status(429).json(response);
-            }
-
-            if (response.status === "DUPLICATE") {
-            return res.status(409).json(response);
-            }
-
-            if (response.status === "OK") {
-            return res.status(200).json(response);
-            }
-
-            // fallback for unexpected statuses
-            return res.status(500).json(response);
-        }
+    client.UploadVideo(
+    { producerId: PRODUCER_ID, filename, data: buffer },
+    (grpcErr, response) => {
+        if (grpcErr) {
+        console.error(
+            `[PRODUCER ${PRODUCER_ID}] gRPC error:`,
+            grpcErr.message
         );
+        // Real technical failure -> 500
+        return res
+            .status(500)
+            .json({ error: "Failed to upload to consumer (gRPC error)" });
+        }
+
+        console.log(
+        `[PRODUCER ${PRODUCER_ID}] gRPC response for ${filename}:`,
+        response
+        );
+
+        // For QUEUE_FULL / DUPLICATE / OK, just return 200 with the status in the body
+        return res.status(200).json(response);
+    }
+    );
+
 
     });
   });
