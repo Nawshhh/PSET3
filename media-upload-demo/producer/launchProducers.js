@@ -1,6 +1,7 @@
 // producer/launchProducers.js
 const { spawn } = require("child_process");
 const path = require("path");
+require("dotenv").config();
 
 // P = number of producer instances (your "p" parameter)
 // you can pass it either as env var P or as CLI arg: node launchProducers.js 3
