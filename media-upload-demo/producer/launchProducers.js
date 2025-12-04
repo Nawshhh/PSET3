@@ -4,11 +4,9 @@ const path = require("path");
 require("dotenv").config();
 
 // P = number of producer instances (your "p" parameter)
-// you can pass it either as env var P or as CLI arg: node launchProducers.js 3
 const P = parseInt(process.env.P || process.argv[2] || "1", 10);
 
 // base HTTP port for producer servers
-// producer1 -> BASE_PORT, producer2 -> BASE_PORT+1, etc.
 const BASE_PORT = parseInt(process.env.BASE_PORT || "3001", 10);
 
 // address of consumer gRPC server
