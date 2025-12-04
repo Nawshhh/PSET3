@@ -14,6 +14,10 @@ const HTTP_PORT = parseInt(process.env.HTTP_PORT || "4000", 10);
 const MAX_QUEUE = parseInt(process.env.Q || "5", 10);
 const MAX_CONCURRENT_SAVES = parseInt(process.env.C || "2", 10);
 
+const MAX_GRPC_MB = parseInt(process.env.MAX_GRPC_MB || "300", 10);
+const GRPC_BYTES = MAX_GRPC_MB * 1024 * 1024;
+
+
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -138,10 +142,15 @@ function uploadVideo(call, callback) {
 }
 
 function startGrpcServer() {
-  const server = new grpc.Server();
+  const server = new grpc.Server({
+    "grpc.max_receive_message_length": GRPC_BYTES,
+    "grpc.max_send_message_length": GRPC_BYTES,
+  });
+
   server.addService(mediaProto.MediaUploadService.service, {
     UploadVideo: uploadVideo,
   });
+
   server.bindAsync(
     `0.0.0.0:${GRPC_PORT}`,
     grpc.ServerCredentials.createInsecure(),
@@ -150,11 +159,14 @@ function startGrpcServer() {
         console.error("Failed to start gRPC server:", err);
         process.exit(1);
       }
-      console.log(`[CONSUMER] gRPC server listening on ${port}`);
+      console.log(
+        `[CONSUMER] gRPC server listening on ${port} (max ${MAX_GRPC_MB} MB per message)`
+      );
       server.start();
     }
   );
 }
+
 
 function startHttpServer() {
   const app = express();

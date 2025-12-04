@@ -16,6 +16,10 @@ const HTTP_PORT = parseInt(process.env.PORT || "3000", 10);
 const MAX_FILE_MB = parseInt(process.env.MAX_FILE_MB || "50", 10);
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
+// max gRPC message size (MB)
+const MAX_GRPC_MB = parseInt(process.env.MAX_GRPC_MB || "300", 10);
+const GRPC_BYTES = MAX_GRPC_MB * 1024 * 1024;
+
 // ---- per-producer local folder (for spec: separate folder per thread) ----
 const FOLDERS_ROOT = path.join(__dirname, "folders");
 const PRODUCER_FOLDER = path.join(FOLDERS_ROOT, PRODUCER_ID);
@@ -44,8 +48,13 @@ const mediaProto = grpc.loadPackageDefinition(packageDef).media;
 
 const client = new mediaProto.MediaUploadService(
   GRPC_ADDR,
-  grpc.credentials.createInsecure()
+  grpc.credentials.createInsecure(),
+  {
+    "grpc.max_receive_message_length": GRPC_BYTES,
+    "grpc.max_send_message_length": GRPC_BYTES,
+  }
 );
+
 
 // ---- express + multer ----
 const app = express();
