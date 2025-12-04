@@ -83,52 +83,64 @@ app.get("/", (req, res) => {
 
       <div id="status" class="status"></div>
 
-      <script>
-        const form = document.getElementById('uploadForm');
-        const statusEl = document.getElementById('status');
+    <script>
+    const form = document.getElementById('uploadForm');
+    const statusEl = document.getElementById('status');
 
-        form.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          statusEl.textContent = 'Uploading...';
-          statusEl.className = 'status';
+    form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    statusEl.textContent = 'Uploading...';
+    statusEl.className = 'status';
 
-          const formData = new FormData(form);
+    const formData = new FormData(form);
 
-          try {
-            const res = await fetch('/upload', {
-              method: 'POST',
-              body: formData
-            });
-
-            let data = {};
-            try { data = await res.json(); } catch(e) {}
-
-            if (!res.ok) {
-              statusEl.textContent = data.error || 'Upload failed.';
-              statusEl.className = 'status error';
-              return;
-            }
-
-            if (data.status === 'OK') {
-              statusEl.textContent = data.message || 'Upload successful!';
-              statusEl.className = 'status ok';
-            } else if (data.status === 'QUEUE_FULL') {
-              statusEl.textContent = 'Queue is full on consumer. Please try again later.';
-              statusEl.className = 'status error';
-            } else if (data.status === 'DUPLICATE') {
-              statusEl.textContent = data.message || 'Duplicate video – skipped.';
-              statusEl.className = 'status error';
-            } else {
-              statusEl.textContent = data.message || 'Upload failed.';
-              statusEl.className = 'status error';
-            }
-
-          } catch (err) {
-            statusEl.textContent = 'Network error.';
-            statusEl.className = 'status error';
-          }
+    try {
+        const res = await fetch('/upload', {
+        method: 'POST',
+        body: formData
         });
-      </script>
+
+        let data = {};
+        try { data = await res.json(); } catch(e) {}
+
+        // ---- handle normal error ----
+        if (!res.ok) {
+        statusEl.textContent = data.error || "Upload failed.";
+        statusEl.className = "status error";
+        return;
+        }
+
+        // ---- handle QUEUE FULL ----
+        if (data.status === "QUEUE_FULL") {
+        statusEl.textContent = "Queue is full on consumer. Please try again later.";
+        statusEl.className = "status error";
+        return;
+        }
+
+        // ---- handle DUPLICATE ----
+        if (data.status === "DUPLICATE") {
+        statusEl.textContent = data.message || "Duplicate video.";
+        statusEl.className = "status error";
+        return;
+        }
+
+        // ---- handle SUCCESS ----
+        if (data.status === "OK") {
+        statusEl.textContent = data.message || "Upload successful!";
+        statusEl.className = "status ok";
+        return;
+        }
+
+        // fallback
+        statusEl.textContent = "Unknown response from server.";
+        statusEl.className = "status error";
+
+    } catch (err) {
+        statusEl.textContent = "Network error.";
+        statusEl.className = "status error";
+    }
+    });
+    </script>
     </body>
     </html>
   `);
