@@ -1,116 +1,284 @@
-# Media Upload Demo (Node + gRPC + React)
+# Media Upload Demo  
+### Multi-Producer -> Single-Consumer Upload System  
+**Node.js + gRPC + Express + React (Vite)**
 
-This is a simple multi-producer / single-consumer media upload system:
+This project simulates a multi-producer media upload pipeline using gRPC:
 
-- **Producers** (Node) read video files from local folders and send them via **gRPC**.
-- **Consumer** (Node) receives and stores videos on disk, enforcing a **bounded queue** (leaky bucket).
-- **Web Client** (React + Vite) lists uploaded videos and:
-  - Plays a **10s preview on hover**
-  - Plays the **full video on click**
+- **Producers**
+  - Multiple producer servers, each running on its own port  
+  - Each producer has its own folder  
+  - Uploads videos to a consumer using gRPC  
+
+- **Consumer**
+  - Receives uploads and saves videos to disk  
+  - Enforces a bounded queue (`Q`)  
+  - Uses worker threads (`C`) to process uploads  
+  - Returns responses: `OK`, `QUEUE_FULL`, `DUPLICATE`  
+
+- **Web Client (React + Vite)**
+  - Displays uploaded videos  
+  - Hover previews the first 10 seconds  
+  - Clicking plays the full video  
+
 ---
 
 ## Folder Structure
 
-```text
-media-upload-demo/
-  proto/
-    media.proto         # gRPC service + messages
-
-  consumer/
-    server.js           # gRPC + HTTP server
-    uploads/            # uploaded videos are stored here
-
-  producer/
-    producer.js         # producer that uploads videos via gRPC
-    folders/
-      producer1/        # test videos for producer 1
-      producer2/        # test videos for producer 2
-
-  web-client/
-    package.json
-    tsconfig.json
-    vite.config.ts
-    index.html
-    src/
-      main.tsx
-      App.tsx
 ```
+media-upload-demo/
+│
+├── proto/
+│   └── media.proto
+│
+├── consumer/
+│   ├── server.js
+│   ├── uploads/
+│   ├── package.json
+│   └── package-lock.json
+│
+├── producer/
+│   ├── launchProducers.js
+│   ├── server.js
+│   ├── .env
+│   ├── folders/
+│   ├── package.json
+│   └── package-lock.json
+│
+└── web-client/
+    ├── index.html
+    ├── package.json
+    ├── package-lock.json
+    ├── tsconfig.json
+    ├── vite.config.ts
+    └── src/
+        ├── main.tsx
+        ├── App.tsx
+        └── ProducerUploader.tsx
+```
+
 ---
 
-## Instructions to Run
+## Requirements
 
-1. Install Node.js
+- Node.js 18 or higher  
+- NPM  
+- Works on Mac, Windows, or mixed machine environments  
+
+Check version:
+
 ```
-node - v
+node -v
 npm -v
 ```
-2. Set up the consumer (gRPC + HTTP)
+
+---
+
+# 1. Running the Consumer (gRPC + HTTP)
+
+Install dependencies:
+
 ```
 cd media-upload-demo/consumer
-npm init -y
-npm install express cors @grpc/grpc-js @grpc/proto-loader
+npm install
 ```
-- on mac
-  ```
-  Q=5 C=2 node server.js
-  ```
-- on windows
-  ```
-  set Q=5
-  set C=2
-  node server.js
 
-  ```
-**Leave the terminal running** 
+### Run the consumer with queue and worker parameters
 
-3. Set up Frontend (React + Vite) <br>
-   on a **new terminal** set up:
-   ```
-   cd media-upload-demo/web-client
-   npm install
-   npm run dev
-   ```
-afterwards, click mo http://localhost:5173/
+**macOS / Linux**
 
-4. Prepare some test videos for the producer in either of the folders:
-   ```
-   media-upload-demo/producer/folders/producer1/
-   media-upload-demo/producer/folders/producer2/
+```
+Q=5 C=2 MAX_GRPC_MB=300 node server.js
+```
 
-   ```
-   They can even be the same file copied twice. Just make sure extension is `.mp4`, `.webm`, `.ogg`, `.mov`, or `.m4v`.
+**Windows PowerShell**
 
-5. Set up the producer
-   on a **new terminal** set up:
-   ```
-   cd media-upload-demo/producer
-   npm init -y
-   npm install @grpc/grpc-js @grpc/proto-loader
+```
+$env:Q=5
+$env:C=2
+$env:MAX_GRPC_MB=300
+node server.js
+```
 
-   ```
-   Make sure the consumer is still running on port 50051.
-   - on mac:
-   ```
-   P=2 GRPC_ADDR=localhost:50051 node producer.js
-   ```
-   - on windows (cmd):
-   ```
-   set P=2
-   set GRPC_ADDR=localhost:50051
-   node producer.js
-   ```
-   you should something like:
-   ```
-   [PRODUCER producer1] Found 2 video(s) to upload
-   [PRODUCER producer1] Uploaded test1.mp4 -> OK: Video saved: ...
-   [PRODUCER producer2] Uploaded test2.mp4 -> OK: Video saved: ...
-   ```
-6. After all is done and running, go to http://localhost:5173 and refresh. Everytie you upload something new, do Step 5 producer command. 
+You should see:
 
+```
+[CONSUMER] gRPC server listening on port 50051
+[CONSUMER] HTTP API listening on port 4000
+```
 
+Leave this terminal running.
 
+---
 
+# 2. Running the Web Client (React + Vite)
 
+Open a new terminal:
 
+```
+cd media-upload-demo/web-client
+npm install
+npm run dev
+```
 
+Web UI is available at:
 
+```
+http://localhost:5173
+```
+
+This page displays uploaded videos, previews, and full playback.
+
+---
+
+# 3. Producer Configuration (`.env`)
+
+Inside `media-upload-demo/producer/.env`:
+
+```
+P=4
+GRPC_ADDR=127.0.0.1:50051
+MAX_FILE_MB=300
+MAX_GRPC_MB=300
+BASE_PORT=3001
+```
+
+Explanation:
+
+- `P=4` creates 4 producer servers.  
+- Server ports:
+
+  - Producer1 -> http://localhost:3001  
+  - Producer2 -> http://localhost:3002  
+  - Producer3 -> http://localhost:3003  
+  - Producer4 -> http://localhost:3004  
+
+- Producer folders are created automatically:
+
+  - `folders/producer1/`
+  - `folders/producer2/`
+  - ...
+
+---
+
+# 4. Running the Producers
+
+Install dependencies:
+
+```
+cd media-upload-demo/producer
+npm install
+```
+
+Launch all producers:
+
+```
+node launchProducers.js
+```
+
+You should see:
+
+```
+[LAUNCHER] Starting 4 producer server instance(s)
+[LAUNCHER] producer1 running at http://localhost:3001
+[LAUNCHER] producer2 running at http://localhost:3002
+[LAUNCHER] producer3 running at http://localhost:3003
+[LAUNCHER] producer4 running at http://localhost:3004
+```
+
+Each producer page contains an upload form.
+
+---
+
+# 5. Uploading Videos
+
+Open the producer pages:
+
+- http://localhost:3001  
+- http://localhost:3002  
+- http://localhost:3003  
+- http://localhost:3004  
+
+Upload results may show:
+
+- Upload successful  
+- Duplicate video  
+- Queue is full  
+
+---
+
+# 6. Testing Queue and Worker Limits
+
+Example consumer settings:
+
+```
+Q=2
+C=1
+```
+
+Expected behavior:
+
+- First upload -> accepted  
+- Second upload -> accepted  
+- Third upload -> rejected (`QUEUE_FULL`)  
+- Fourth upload -> rejected  
+
+Consumer logs:
+
+```
+[CONSUMER] Enqueued ...
+[CONSUMER] Enqueued ...
+[CONSUMER] Rejecting ... queue FULL
+```
+
+Producer UI shows:
+
+```
+Queue is full on consumer. Please try again later.
+```
+
+---
+
+# 7. Running Across Two Machines (LAN)
+
+## Consumer on macOS
+
+```
+cd media-upload-demo/consumer
+Q=2 C=1 node server.js
+```
+
+Find macOS IP:
+
+```
+ipconfig getifaddr en0
+```
+
+Example IP:
+
+```
+192.168.1.10
+```
+
+## Producer `.env` on Windows
+
+```
+GRPC_ADDR=192.168.1.10:50051
+```
+
+Run:
+
+```
+cd media-upload-demo/producer
+node launchProducers.js
+```
+
+---
+
+# System Overview
+
+1. Producer uploads a file via the `/upload` HTTP endpoint  
+2. Producer sends file bytes via gRPC to the consumer  
+3. Consumer saves file or rejects if duplicate / queue full  
+4. Consumer returns `OK`, `DUPLICATE`, or `QUEUE_FULL`  
+5. Producer UI displays the result  
+6. React UI displays all uploaded videos  
